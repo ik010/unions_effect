@@ -21,6 +21,8 @@ library(plotly)
 library(dplyr)
 library(modi)
 library(scales)
+library(knitr)
+library(kableExtra)
 
 DATA_DIR <-  "C:/Users/user/Documents/labor_eco/final_project"
 
@@ -40,6 +42,10 @@ country_codes
 ```{r original data}
 original_dt <- data.table(read_dta(IVS_PATH))
 dt <- merge(original_dt, country_codes, by="COW_NUM")
+```
+
+```{r}
+load(file="dt")
 ```
 
 ```{r}
@@ -98,31 +104,71 @@ EVS4 <- EVS_all_waves[S002EVS == 4]
 EVS5 <- EVS_all_waves[S002EVS == 5]
 ```
 
+```{r}
+wvs_list <- list(WVS1, WVS2, WVS3, WVS4, WVS5, WVS6, WVS7, EVS1, EVS2, EVS3, EVS4, EVS5)
+
+nulls_table <- data.frame(matrix(ncol = 12, nrow = 9))
+colnames(nulls_table) <- c("WVS1", "WVS2", "WVS3", "WVS4", "WVS5", "WVS6", "WVS7", "EVS1", "EVS2", "EVS3", "EVS4", "EVS5")
+rownames(nulls_table) <- c("Full-time employment rate", "Full-time employment obs", "Filled data about education","Filled data about education obs ", "Filled data about age","Filled data about age obs", "Filled data about religion", "Filled data about religion obs", "Total observations")
+
+```
 
 ```{r}
-check_null_precent <- function(dt, name, col) {
+for (i in 1:12) {
+  # employed rate
+  employed_rows <- wvs_list[[i]][X028 == 1,]
+  employed_percent <- sprintf("%.3f%%", nrow(employed_rows) / nrow(wvs_list[[i]])  * 100)
+  nulls_table[1,i] <- employed_percent
   
-dt <- dt[, educ_obs_count := .N, by=.(col)]
-NA_educ_count <- unique(dt$educ_obs_count[is.na(col)])
-print(
-    paste0(
-    "The percent null educ obs in ",
-    name,
-    " :",
-    sprintf("%.3f%%", (NA_educ_count/ nrow(dt)) * 100)
-    )
-  )
-
+   # employed obs
+  nulls_table[2,i] <-  as.numeric(nrow(employed_rows))
+ 
+  # education non-null rate
+  education_rows <- wvs_list[[i]][!is.na(X025),]
+  education_percent <-  sprintf("%.3f%%", nrow(education_rows) / nrow(wvs_list[[i]])  * 100)
+  nulls_table[3,i] <- education_percent
+  
+  #educ obs
+  nulls_table[4,i] <- as.numeric(nrow(education_rows))
+  
+  # age non-null rate
+  age_rows <- wvs_list[[i]][!is.na(X003),]
+  age_percent <- sprintf("%.3f%%", nrow(age_rows) / nrow(wvs_list[[i]]) * 100)
+  nulls_table[5,i] <- age_percent
+  
+  # age non-null obs
+  nulls_table[6,i] <- as.numeric(nrow(age_rows))
+  
+  # religion non-null rate
+  religion_rows <- wvs_list[[i]][F034 %in% c(1, 2, 3),]
+  religion_percent <- sprintf("%.3f%%", nrow(religion_rows) / nrow(wvs_list[[i]]) * 100)
+  nulls_table[7,i] <- religion_percent
+  
+  # religion non-null obs
+  nulls_table[8,i] <- as.numeric(nrow(religion_rows))
+  
 }
+
+
+nulls_table_to_show<-
+  nulls_table %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
+  column_spec(1, bold = T)
+
+# nulls_table_to_show<- 
+# results_table <- knitr::kable(nulls_table, format = "latex", booktabs = TRUE, align = "c") %>%
+#   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+#   column_spec(1, bold = T) %>%
+#   add_header_above(c(" " = 1, "Employed rate" = 4, "Education non-null rate" = 4, "Age non-null rate" = 4, "Religion non-null rate" = 4)) %>%
+#   collapse_rows(columns = 1, valign = "middle", latex_hline = "major")
+
+
+
+nulls_table_to_show
 ```
-```{r}
-check_null_precent(WVS1, "WVS1", WVS1$X025)
-check_null_precent(WVS2, "WVS2",  WVS2$X025)
-check_null_precent(WVS3, "WVS3",  WVS3$X025)
-check_null_precent(WVS4, "WVS4",  WVS4$X025)
-check_null_precent(WVS5, "WVS5",  WVS5$X025)
-check_null_precent(WVS6, "WVS6",  WVS6$X025)
-```
+
 
 ```{r basic function}
 basic_dt <- function(raw_dt, wvs) {
@@ -218,23 +264,31 @@ unified_string_to_number_education <- function(raw_dt, categories_col) {
 ```
 
 
+
+
 ```{r specific WVS functions}
 format_WVS1 <- function(raw_dt) {
 
-  dt <- basic_dt(raw_dt, TRUE)
-  dt$education = NA  # no education in this wave
-  dt$union <- raw_dt$A101
+  raw_dt$educ = NA  # no education in this wave
+  raw_dt$union <- raw_dt$A101
   # format religion
+  dt <- basic_dt(raw_dt, TRUE)
+  
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
   dt
 }
 
 format_WVS2 <- function(raw_dt) {
   
   
-   raw_dt <- number_to_string_education_8_categories(raw_dt)
+  raw_dt <- number_to_string_education_8_categories(raw_dt)
   raw_dt$educ <- unified_string_to_number_education(raw_dt, raw_dt$X025)
   dt <- basic_dt(raw_dt, TRUE)
   dt$union <- raw_dt$A067
+  
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
   
   dt
 }
@@ -249,6 +303,9 @@ format_WVS3 <- function(raw_dt) {
   dt <- basic_dt(raw_dt, TRUE)
   dt$union <- raw_dt$A101
   
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
+  
   dt
 }
 
@@ -262,6 +319,9 @@ format_WVS4 <- function(raw_dt) {
   
   dt$union <- raw_dt$A067
   
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
+  
   dt
 }
 
@@ -274,6 +334,9 @@ format_WVS5 <- function(raw_dt) {
   dt <- basic_dt(raw_dt, TRUE)
   
   dt$union <- raw_dt$A101
+  
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
 
   dt
 }
@@ -287,6 +350,9 @@ format_WVS6 <- function(raw_dt) {
   dt <- basic_dt(raw_dt, TRUE)
   
   dt$union <- raw_dt$A101
+  
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
   
   dt
 }
@@ -302,6 +368,9 @@ format_WVS7 <- function(raw_dt) {
   
   dt$union <- raw_dt$A101
   
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
+  
   dt
 }
 
@@ -313,13 +382,19 @@ format_EVS1 <- function(raw_dt) {
   dt <- basic_dt(raw_dt, FALSE)
   dt$education = NA  # no education in this wave
   
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
+  
   dt
 }
 
 format_EVS2 <- function(raw_dt) {
   dt <- basic_dt(raw_dt, FALSE)
   dt$education <- NA # no education in this wave
-
+  
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
+  
   dt
 }
 
@@ -328,8 +403,11 @@ format_EVS3 <- function(raw_dt) {
    # format education
   raw_dt<- number_to_string_education_8_categories(raw_dt)
   raw_dt$educ <- unified_string_to_number_education(raw_dt, raw_dt$X025)
-  
+ 
   dt <- basic_dt(raw_dt, FALSE)
+  
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
   
 }
 
@@ -337,6 +415,10 @@ format_EVS4 <- function(raw_dt) {
      # format education
   raw_dt<- number_to_string_education_8_categories(raw_dt)
   raw_dt$educ <- unified_string_to_number_education(raw_dt, raw_dt$X025)
+  
+  dt <- basic_dt(raw_dt, FALSE)
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
   
   dt
 }
@@ -348,6 +430,9 @@ format_EVS5 <- function(raw_dt) {
   raw_dt$educ <- unified_string_to_number_education(raw_dt, raw_dt$X025A_01 )
   
   dt <- basic_dt(raw_dt, FALSE)
+  
+  #only if working full time- 
+  dt <- dt[employment_status == 1, ]
   
   dt
 }
@@ -369,17 +454,46 @@ formatted_EVS2 <- format_EVS2(EVS2)
 formatted_EVS3 <- format_EVS3(EVS3)
 formatted_EVS4 <- format_EVS4(EVS4)
 formatted_EVS5 <- format_EVS5(EVS5)
-
 ```
+#Checking patterns in result
 
 ```{r}
-check_null_precent(WVS1, "WVS1", WVS1$X025)
-check_null_precent(WVS2, "WVS2",  WVS2$X025)
-check_null_precent(WVS3, "WVS3",  WVS3$X025)
-check_null_precent(WVS4, "WVS4",  WVS4$X025)
-check_null_precent(WVS5, "WVS5",  WVS5$X025)
-check_null_precent(WVS6, "WVS6",  WVS6$X025)
+
+# define a function to calculate the percentage of null education observations
+check_null_percent <- function(dt, name, col) {
+  dt <- dt[, educ_obs_count := .N, by=.(col)]
+  non_NA_educ_count <- unique(dt$educ_obs_count[is.na(col)])
+  null_percent <- sprintf("%.3f%%",(non_NA_educ_count / nrow(dt)) * 100)
+  c(null_percent, null_percent[1])
+}
+
+# apply the check_null_percent function to each dataset
+null_percentages <- lapply(list(WVS1, WVS2, WVS3, WVS4, WVS5, WVS6), function(dt){
+  check_null_percent(dt, "WVS", dt$X025)
+})
+
+formatted_null_percentages <- lapply(list(formatted_WVS1, formatted_WVS2, formatted_WVS3, formatted_WVS4, formatted_WVS5, formatted_WVS6, formatted_WVS7), function(dt){
+  check_null_percent(dt, "formatted_WVS", dt$educ)
+})
+
+
+# create a data table to compare the results
+educ_compare <- data.table(WVS = paste0("WVS", 1:7),
+                         education_nulls_overall_rate = sapply(null_percentages, `[`, 1),
+                         Education_nulls_rate_for_full_timers = sapply(formatted_null_percentages, `[`, 2))
+educ_compare[7,2] <- check_null_percent(WVS7, "WVS", WVS7$X025A_01)[1]
+
+educ_compare<-
+  educ_compare %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
+  column_spec(1, bold = T)
+
+educ_compare
 ```
+We can't really see a pattern if people are working full time about their willingness to tell their education level. We can see that in WSV2, WSV4, WSV6, WSV7 people who work full time shared more about their education level, but it's not the case for all waves.
+
 
 ```{r}
 rm(EVS1, EVS2, EVS3, EVS4, EVS5, WVS1, WVS2, WVS3, WVS4, WVS5, WVS6, WVS7)
@@ -406,11 +520,11 @@ obs_per_country <- formatted_dt[, .N, by=country]
 plot_ly(obs_per_country, x=~country, y=~N, type = 'bar')
 ```
 
-## Reggressions and Results
+## Reggressions and nulls_table
 ```{r regression function}
 
 regression_function <- function(dt, countries) {
-  results <- list()
+  nulls_table <- list()
   i <- 1
   
   for (co in countries) {
@@ -430,47 +544,47 @@ regression_function <- function(dt, countries) {
       print(model)
       result <- model$coeftable %>% as.data.frame() %>% head(1) %>% mutate(country=co)
       colnames(result) <- c("Estimate", "sd", "t_value", "pr_t", "country")
-      results[[i]] <- result
+      nulls_table[[i]] <- result
       i <- i + 1
     }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
   }
   
-  results <- data.table(bind_rows(results))
-  results <- results[order(-Estimate),]
-  results
+  nulls_table <- data.table(bind_rows(nulls_table))
+  nulls_table <- nulls_table[order(-Estimate),]
+  nulls_table
 }
 
 countries <- sort(unique(formatted_dt$country))
-results <- regression_function(formatted_dt, countries)
+nulls_table <- regression_function(formatted_dt, countries)
 
-male_results <- regression_function(formatted_dt[male == 1,], countries)
-female_results <- regression_function(formatted_dt[male == 0,], countries)
+male_nulls_table <- regression_function(formatted_dt[male == 1,], countries)
+female_nulls_table <- regression_function(formatted_dt[male == 0,], countries)
 
-under_age_35_results <- regression_function(formatted_dt[age <= 35 ,], countries)
-over_age_35_results <- regression_function(formatted_dt[age > 35 ,], countries)
+under_age_35_nulls_table <- regression_function(formatted_dt[age <= 35 ,], countries)
+over_age_35_nulls_table <- regression_function(formatted_dt[age > 35 ,], countries)
 
 ```
 
 
 
 ```{r plot, echo=FALSE}
-plot_ly(results, x = ~country) %>% 
+plot_ly(nulls_table, x = ~country) %>% 
   add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
   layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country")
 
-plot_ly(male_results, x = ~country) %>% 
+plot_ly(male_nulls_table, x = ~country) %>% 
   add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
   layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Male")
 
-plot_ly(female_results, x = ~country) %>% 
+plot_ly(female_nulls_table, x = ~country) %>% 
   add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
   layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Female")
 
-plot_ly(under_age_35_results, x = ~country) %>% 
+plot_ly(under_age_35_nulls_table, x = ~country) %>% 
   add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
   layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Ages <= 35")
 
-plot_ly(over_age_35_results, x = ~country) %>% 
+plot_ly(over_age_35_nulls_table, x = ~country) %>% 
   add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
   layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Ages > 35")
 ```
