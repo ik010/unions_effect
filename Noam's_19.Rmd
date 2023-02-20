@@ -114,59 +114,50 @@ rownames(nulls_table) <- c("Full-time employment rate", "Full-time employment ob
 ```
 
 ```{r}
-for (i in 1:12) {
-  # employed rate
-  employed_rows <- wvs_list[[i]][X028 == 1,]
-  employed_percent <- sprintf("%.3f%%", nrow(employed_rows) / nrow(wvs_list[[i]])  * 100)
-  nulls_table[1,i] <- employed_percent
+  for (i in 1:12) {
+    # employed rate
+    employed_rows <- wvs_list[[i]][X028 == 1,]
+    employed_percent <- sprintf("%.3f%%", nrow(employed_rows) / nrow(wvs_list[[i]])  * 100)
+    dt[1,i] <- employed_percent
+    
+     # employed obs
+    dt[2,i] <-  as.numeric(nrow(employed_rows))
+   
+    # education non-null rate
+    education_rows <- wvs_list[[i]][!is.na(X025),]
+    education_percent <-  sprintf("%.3f%%", nrow(education_rows) / nrow(wvs_list[[i]])  * 100)
+    dt[3,i] <- education_percent
+    
+    #educ obs
+    dt[4,i] <- as.numeric(nrow(education_rows))
+    
+    # age non-null rate
+    age_rows <- wvs_list[[i]][!is.na(X003),]
+    age_percent <- sprintf("%.3f%%", nrow(age_rows) / nrow(wvs_list[[i]]) * 100)
+    dt[5,i] <- age_percent
+    
+    # age non-null obs
+    dt[6,i] <- as.numeric(nrow(age_rows))
+    
+    # religion non-null rate
+    religion_rows <- wvs_list[[i]][F034 %in% c(1, 2, 3),]
+    religion_percent <- sprintf("%.3f%%", nrow(religion_rows) / nrow(wvs_list[[i]]) * 100)
+    dt[7,i] <- religion_percent
+    
+    # religion non-null obs
+    dt[8,i] <- as.numeric(nrow(religion_rows))
+    
+  }
   
-   # employed obs
-  nulls_table[2,i] <-  as.numeric(nrow(employed_rows))
- 
-  # education non-null rate
-  education_rows <- wvs_list[[i]][!is.na(X025),]
-  education_percent <-  sprintf("%.3f%%", nrow(education_rows) / nrow(wvs_list[[i]])  * 100)
-  nulls_table[3,i] <- education_percent
+  nulls_table_to_show<-
+    nulls_table %>%
+    kbl() %>%
+    kable_classic(full_width = F, html_font = "Cambria") %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
+    column_spec(1, bold = T)
   
-  #educ obs
-  nulls_table[4,i] <- as.numeric(nrow(education_rows))
-  
-  # age non-null rate
-  age_rows <- wvs_list[[i]][!is.na(X003),]
-  age_percent <- sprintf("%.3f%%", nrow(age_rows) / nrow(wvs_list[[i]]) * 100)
-  nulls_table[5,i] <- age_percent
-  
-  # age non-null obs
-  nulls_table[6,i] <- as.numeric(nrow(age_rows))
-  
-  # religion non-null rate
-  religion_rows <- wvs_list[[i]][F034 %in% c(1, 2, 3),]
-  religion_percent <- sprintf("%.3f%%", nrow(religion_rows) / nrow(wvs_list[[i]]) * 100)
-  nulls_table[7,i] <- religion_percent
-  
-  # religion non-null obs
-  nulls_table[8,i] <- as.numeric(nrow(religion_rows))
-  
-}
+  nulls_table_to_show
 
-
-nulls_table_to_show<-
-  nulls_table %>%
-  kbl() %>%
-  kable_classic(full_width = F, html_font = "Cambria") %>%
-  kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
-  column_spec(1, bold = T)
-
-# nulls_table_to_show<- 
-# results_table <- knitr::kable(nulls_table, format = "latex", booktabs = TRUE, align = "c") %>%
-#   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
-#   column_spec(1, bold = T) %>%
-#   add_header_above(c(" " = 1, "Employed rate" = 4, "Education non-null rate" = 4, "Age non-null rate" = 4, "Religion non-null rate" = 4)) %>%
-#   collapse_rows(columns = 1, valign = "middle", latex_hline = "major")
-
-
-
-nulls_table_to_show
 ```
 
 
@@ -513,11 +504,57 @@ formatted_dt <- rbind(formatted_WVS, formatted_EVS, fill=T)
 ```{r}
 save(formatted_dt, file="formatted_dt")
 ```
+```{r}
+rm(formatted_EVS1, formatted_EVS2, formatted_EVS3, formatted_EVS4, formatted_EVS5)
+rm(formatted_WVS1, formatted_WVS2, formatted_WVS3, formatted_WVS4, formatted_WVS5, formatted_WVS6, formatted_WVS7)
+```
+
+## Something is weird, the formatted_dt is losing data, we need to check it-
+
+```{r}
+
+check_NAs <- function(col_name, dt){
+  nas_rows <- dt[is.na(dt[[col_name]]), ]
+  nas_percent <- nrow(nas_rows) / nrow(dt) * 100
+  data.frame(col_name = col_name, nas_percent = nas_percent)
+}
+
+make_NAs_table <- function(dt){
+cols <- colnames(dt)
+dt_nas <-  as.data.frame(do.call(rbind, lapply(cols, check_NAs, dt = dt)))
+
+dt_nas_table<-  dt_nas %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
+  column_spec(1, bold = T)
+
+print(dt_nas_table)
+
+dt_nas
+}
+
+formatted_NAs_df <- make_NAs_table(formatted_dt)
+formatted_NAs_WVS1_df <- make_NAs_table(formatted_WVS1)
+formatted_NAs_WVS2_df <- make_NAs_table(formatted_WVS2)
+```
 
 
 ```{r observation per country}
 obs_per_country <- formatted_dt[, .N, by=country]
 plot_ly(obs_per_country, x=~country, y=~N, type = 'bar')
+```
+
+
+
+```{r}
+country_data <- formatted_dt[country == "France"]
+model <- feols(income ~ union + male + age + age2 + age3 | 
+                       year + employment_status + marital_status + education + n_children, 
+                     data=country_data, 
+                     weights=~weights, 
+                     se='hetero')
+print(model)
 ```
 
 ## Reggressions and nulls_table
@@ -530,14 +567,17 @@ regression_function <- function(dt, countries) {
   for (co in countries) {
     country_data <- dt[country == co]
     
-    country_data <- country_data[employment_status != 4 &  # retired
-                                 employment_status != 7    # unemployed
-                                ]
+    # country_data <- country_data[employment_status != 4 &  # retired
+    #                              employment_status != 7    # unemployed
+    #                             ]
     
     print(paste0(co, " ", nrow(country_data), " "))
-    tryCatch({
+    #tryCatch({
+    
+    #WE NEED TO CLEAR NAS BEFORE THE REG
+    
       model <- feols(income ~ union + male + age + age2 + age3 | 
-                       year + employment_status + marital_status + education + n_children, 
+                       year + employment_status + marital_status + educ + n_children, 
                      data=country_data, 
                      weights=~weights, 
                      se='hetero')
@@ -546,7 +586,7 @@ regression_function <- function(dt, countries) {
       colnames(result) <- c("Estimate", "sd", "t_value", "pr_t", "country")
       nulls_table[[i]] <- result
       i <- i + 1
-    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+   # }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
   }
   
   nulls_table <- data.table(bind_rows(nulls_table))
