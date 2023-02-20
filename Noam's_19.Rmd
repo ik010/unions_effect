@@ -1,0 +1,418 @@
+---
+title: "The Effect of Union Membership on Household Income"
+author: "Noam Winograd"
+date: "2023-02-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+gc(verbose=FALSE)
+```
+
+
+```{r libraries, echo=FALSE, include=FALSE}
+library(haven)
+library(data.table)
+library(fixest)
+library(plotly)
+library(dplyr)
+library(modi)
+
+DATA_DIR <- "/Users/noam/Personal/HUJI/Labor Economics/Final Project/data"
+
+COUNTRY_CODES_PATH <- file.path(DATA_DIR, 'cow_country_codes.csv')
+IVS_PATH <- file.path(DATA_DIR, 'Integrated_values_surveys_1981-2021.dta')
+
+```
+
+## Data Loading and Cleaning
+
+```{r country codes}
+country_codes <- unique(data.table(read.csv(COUNTRY_CODES_PATH)))
+colnames(country_codes) <- c("country_short_name", "COW_NUM", "country_name")
+country_codes
+```
+
+```{r original data}
+original_dt <- data.table(read_dta(IVS_PATH))
+dt <- merge(original_dt, country_codes, by="COW_NUM")
+```
+
+```{r remove countries with too little observations}
+dt <- dt[, country_obs_count := .N, by=.(country_name)]
+dt <- dt[country_obs_count > 500]
+```
+
+
+```{r split into waves}
+WVS_all_waves <- dt[!is.na(S002)]
+WVS1 <- WVS_all_waves[S002 == 1]
+WVS2 <- WVS_all_waves[S002 == 2]
+WVS3 <- WVS_all_waves[S002 == 3]
+WVS4 <- WVS_all_waves[S002 == 4]
+WVS5 <- WVS_all_waves[S002 == 5]
+WVS6 <- WVS_all_waves[S002 == 6]
+WVS7 <- WVS_all_waves[S002 == 7]
+
+
+EVS_all_waves <- dt[!is.na(S002EVS)]
+EVS1 <- EVS_all_waves[S002EVS == 1]
+EVS2 <- EVS_all_waves[S002EVS == 2]
+EVS3 <- EVS_all_waves[S002EVS == 3]
+EVS4 <- EVS_all_waves[S002EVS == 4]
+EVS5 <- EVS_all_waves[S002EVS == 5]
+```
+
+```{r basic function}
+basic_dt <- function(raw_dt, wvs) {
+  # returns the dt with the columns that exists in all waves
+  dt <- data.table()
+  dt$country <- raw_dt$country_name
+  dt$year = raw_dt$S020
+  dt$age = raw_dt$X003
+  dt$age2 = dt$age * dt$age
+  dt$age3 = dt$age * dt$age * dt$age
+  dt$weights <- raw_dt$pwght
+  dt$male = 1 * (raw_dt$X001 == 1)  # in original data 1 = male, 2 = female. Switching it to 1 = male, 0 = female
+  dt$n_children = raw_dt$X011
+  dt$employment_status = raw_dt$X028
+  dt$marital_status = raw_dt$X007
+  
+  if (wvs) { 
+    dt$income <- raw_dt$X047_WVS 
+  } else {
+    dt$income <- raw_dt$X047_EVS
+    dt$union <- raw_dt$A067  # in EVS, all waves have the same parameter
+  }
+  
+  dt
+}
+
+
+number_to_string_education_8_categories <- function(raw_dt) {
+  category_col <- ifelse(raw_dt$X025 == 1, 'Primary incomplete', ifelse(
+      raw_dt$X025 == 2, 'Primary', ifelse(
+      raw_dt$X025 == 3, 'Secondary technical/vocational incomplete', ifelse(
+      raw_dt$X025 == 4, 'Secondary technical/vocational', ifelse(
+      raw_dt$X025 == 5, 'Secondary university preparatory incomplete', ifelse(
+      raw_dt$X025 == 6, 'Secondary university preparatory', ifelse(
+      raw_dt$X025 == 7, 'Some university education', ifelse(
+      raw_dt$X025 == 8, 'University degree', NA)
+  )))))))
+  
+  
+  
+}
+
+
+number_to_string_education_9_categories <- function(raw_dt) {
+  # Mapping the numbers to string, this is relevant for WVS wave 7
+  ifelse(raw_dt$X025A_01 == 0, "Primary incomplete", ifelse(
+    raw_dt$X025A_01 == 1, "Primary", ifelse(
+    raw_dt$X025A_01 == 2, "Lower secondary", ifelse(
+    raw_dt$X025A_01 == 3, "Upper secondary", ifelse(
+    raw_dt$X025A_01 == 4, "Post-secondary non tertiary", ifelse(
+    raw_dt$X025A_01 == 5, "Short-cycle tertiary", ifelse(
+    raw_dt$X025A_01 == 6, "Bachelor", ifelse(
+    raw_dt$X025A_01 == 7, "Master", ifelse(
+    raw_dt$X025A_01 == 8, "Doctoral", NA
+  )))))))))
+}
+
+
+unified_string_to_number_education <- function(categories_col) {
+  # unified the string columns back to number
+  if_else(categories_col == 'Primary incomplete', 1, ifelse(
+    categories_col %in% c('Primary', 
+                          'Secondary technical/vocational incomplete'), 2, ifelse(
+    categories_col %in% c('Secondary technical/vocational', 
+                          'Secondary university preparatory incomplete', 
+                          'Lower secondary'), 3,  ifelse(
+    categories_col %in% c('Secondary university preparatory', 
+                          'Upper secondary'), 4, ifelse(
+    categories_col %in% c('Some university education', 
+                          'Post-secondary non tertiary',
+                          'Short-cycle tertiary'), 5, ifelse(
+    categories_col %in% c('University degree', 'Bachelor', 'Master', 
+                          'Doctoral'), 6, NA)
+  )))))
+  
+  # Meanings:
+  # 1 = Less than primary
+  # 2 = Primary
+  # 3 = Lower secondary (middle school)
+  # 4 = upper secondary (high school)
+  # 5 = Some university education (no degree)
+  # 6 = University Degree
+}
+```
+
+
+```{r specific WVS functions}
+format_WVS1 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, TRUE)
+  dt$education = NA  # no education in this wave
+  dt$union <- raw_dt$A101
+  # format religion
+  dt
+}
+
+format_WVS2 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, TRUE)
+  
+  dt$education_8_category <- number_to_string_education_8_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_8_category)
+  
+  dt$union <- raw_dt$A067
+  
+  # format religion
+  dt
+}
+
+format_WVS3 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, TRUE)
+  
+  # format education
+  dt$education_8_category <- number_to_string_education_8_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_8_category)
+  
+  dt$union <- raw_dt$A101
+  
+  # format religion
+  dt
+}
+
+format_WVS4 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, TRUE)
+  
+  dt$education_8_category <- number_to_string_education_8_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_8_category)
+  
+  dt$union <- raw_dt$A067
+  
+  # format religion
+  dt
+}
+
+format_WVS5 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, TRUE)
+  
+  dt$education_8_category <- number_to_string_education_8_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_8_category)
+  
+  dt$union <- raw_dt$A101
+  
+  # format religion
+  dt
+}
+
+format_WVS6 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, TRUE)
+  
+  dt$education_8_category <- number_to_string_education_8_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_8_category)
+  
+  dt$union <- raw_dt$A101
+  
+  # format religion
+  dt
+}
+
+format_WVS7 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, TRUE)
+  
+  dt$education_9_category <- number_to_string_education_9_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_9_category)
+  
+  dt$union <- raw_dt$A101
+  
+  # format religion
+  dt
+}
+
+```
+
+
+```{r specific EVS functions}
+format_EVS1 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, FALSE)
+  dt$education = NA  # no education in this wave
+  
+  # format religion
+  
+  dt
+}
+
+format_EVS2 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, FALSE)
+  dt$education <- NA # no education in this wave
+  
+  # format religion
+  dt
+}
+
+format_EVS3 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, FALSE)
+  
+  dt$education_8_category <- number_to_string_education_8_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_8_category)
+  
+  # format religion
+  dt
+}
+
+format_EVS4 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, FALSE)
+  
+  dt$education_8_category <- number_to_string_education_8_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_8_category)
+  
+  # format religion
+  dt
+}
+
+format_EVS5 <- function(raw_dt) {
+  dt <- basic_dt(raw_dt, FALSE)
+  
+  dt$education_9_category <- number_to_string_education_9_categories(raw_dt)
+  dt$education <- unified_string_to_number_education(dt$education_9_category)
+  
+  # format religion
+  dt
+}
+```
+
+
+```{r format waves}
+
+formatted_WVS1 <- format_WVS1(WVS1)
+formatted_WVS2 <- format_WVS2(WVS2)
+formatted_WVS3 <- format_WVS3(WVS3)
+formatted_WVS4 <- format_WVS4(WVS4)
+formatted_WVS5 <- format_WVS5(WVS5)
+formatted_WVS6 <- format_WVS6(WVS6)
+formatted_WVS7 <- format_WVS7(WVS7)
+
+formatted_EVS1 <- format_EVS1(EVS1)
+formatted_EVS2 <- format_EVS2(EVS2)
+formatted_EVS3 <- format_EVS3(EVS3)
+formatted_EVS4 <- format_EVS4(EVS4)
+formatted_EVS5 <- format_EVS5(EVS5)
+
+```
+
+
+```{r united formatted waves}
+
+formatted_WVS <- rbind(formatted_WVS1, formatted_WVS2, formatted_WVS3, formatted_WVS4, formatted_WVS5, formatted_WVS6, 
+                       formatted_WVS7, fill=T)
+formatted_EVS <- rbind(formatted_EVS1, formatted_EVS2, formatted_EVS3, formatted_EVS4, formatted_EVS5, fill=T)
+
+formatted_dt <- rbind(formatted_WVS, formatted_EVS, fill=T)
+
+```
+
+
+```{r observation per country}
+obs_per_country <- formatted_dt[, .N, by=country]
+plot_ly(obs_per_country, x=~country, y=~N, type = 'bar')
+```
+
+## Reggressions and Results
+```{r regression function}
+
+regression_function <- function(dt, countries) {
+  results <- list()
+  i <- 1
+  
+  for (co in countries) {
+    country_data <- dt[country == co]
+    
+    country_data <- country_data[employment_status != 4 &  # retired
+                                 employment_status != 7    # unemployed
+                                ]
+    
+    print(paste0(co, " ", nrow(country_data), " "))
+    tryCatch({
+      model <- feols(income ~ union + male + age + age2 + age3 | 
+                       year + employment_status + marital_status + education + n_children, 
+                     data=country_data, 
+                     weights=~weights, 
+                     se='hetero')
+      print(model)
+      result <- model$coeftable %>% as.data.frame() %>% head(1) %>% mutate(country=co)
+      colnames(result) <- c("Estimate", "sd", "t_value", "pr_t", "country")
+      results[[i]] <- result
+      i <- i + 1
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+  }
+  
+  results <- data.table(bind_rows(results))
+  results <- results[order(-Estimate),]
+  results
+}
+
+countries <- sort(unique(formatted_dt$country))
+results <- regression_function(formatted_dt, countries)
+
+male_results <- regression_function(formatted_dt[male == 1,], countries)
+female_results <- regression_function(formatted_dt[male == 0,], countries)
+
+under_age_35_results <- regression_function(formatted_dt[age <= 35 ,], countries)
+over_age_35_results <- regression_function(formatted_dt[age > 35 ,], countries)
+
+```
+
+
+
+```{r plot, echo=FALSE}
+plot_ly(results, x = ~country) %>% 
+  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
+  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country")
+
+plot_ly(male_results, x = ~country) %>% 
+  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
+  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Male")
+
+plot_ly(female_results, x = ~country) %>% 
+  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
+  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Female")
+
+plot_ly(under_age_35_results, x = ~country) %>% 
+  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
+  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Ages <= 35")
+
+plot_ly(over_age_35_results, x = ~country) %>% 
+  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
+  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Ages > 35")
+```
+
+
+```{r AKM country}
+#akm_model <- feols(income ~ union + male + age + age2 + age3 + n_children + education  | year + employment_status 
+#                   + marital_status + country, data=formatted_dt, weights=~weights, se='hetero')
+
+#fixed_effects_coefs <- fixef(akm_model)
+
+# country
+#fe_country <- data.frame(fixed_effects_coefs$country)
+#fe_country <- cbind(country = rownames(fe_country), fe_country)
+
+#formatted_dt <- merge(formatted_dt, fe_country, by='country')
+
+#weigted_var_country_fe <- weighted.var(formatted_dt$fixed_effects_coefs.country, formatted_dt$weights, na.rm = T)
+#weigted_var_income <- weighted.var(formatted_dt$income, formatted_dt$weights, na.rm = T)
+
+#print(paste0("Variation explained by country fixed effect: ", 
+#             100 * round(weigted_var_country_fe / weigted_var_income, 3), "%"))
+
+# if we want, we can do the same to the other fixed effect, and answer the question: 
+# "How much of the income variance can be explained by ___?" where ___ can be also year, employment_status, marital_status
+
+```
+
+
+
