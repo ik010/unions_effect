@@ -1,0 +1,112 @@
+---
+title: "IVS Statistics and visualizations"
+output: html_document
+date: "2023-02-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+gc(verbose=FALSE)
+```
+
+```{r libraries, echo=FALSE, include=FALSE}
+library(haven)
+library(data.table)
+library(fixest)
+library(plotly)
+library(dplyr)
+library(modi)
+library(scales)
+library(knitr)
+library(kableExtra)
+
+DATA_DIR <-  "/Users/noam/Personal/HUJI/Labor Economics/Final Project/data"
+
+COUNTRY_CODES_PATH <- file.path(DATA_DIR, 'cow_country_codes.csv')
+IVS_PATH <- file.path(DATA_DIR, 'Integrated_values_surveys_1981-2021.dta')
+
+```
+
+```{r country codes}
+country_codes <- unique(data.table(read.csv(COUNTRY_CODES_PATH)))
+colnames(country_codes) <- c("country_short_name", "COW_NUM", "country_name")
+country_codes
+```
+
+
+```{r original data}
+original_dt <- data.table(read_dta(IVS_PATH))
+dt <- merge(original_dt, country_codes, by="COW_NUM")
+```
+
+```{r}
+obs_from_evs <- dt[is.na(S002)]
+paste0("The percent of EVS obs: ", sprintf("%.3f%%", (nrow(obs_from_evs) / nrow(dt)) * 100))
+```
+
+```{r waves distributions}
+obs_per_wave_WVS <- dt[!is.na(S002), .N, by=S002]
+obs_per_wave_EVS <- dt[!is.na(S002EVS), .N, by=S002EVS]
+
+plot_ly(obs_per_wave_WVS, x=~S002, y=~N, type = 'bar', text = ~N) %>% 
+  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+         xaxis = list(title = 'WVS Wave', titlefont = list(size = 16), tick0 = 1, dtick = 1, tickangle=0),
+         height=200, width=525)
+
+plot_ly(obs_per_wave_EVS, x=~S002EVS, y=~N, type = 'bar', text = ~N) %>% 
+  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+         xaxis = list(title = 'EVS Wave', titlefont = list(size = 16), tick0 = 1, dtick = 1, tickangle=0),
+         height=200, width=375)
+```
+
+```{r males and females}
+print(paste0("The percentage of males: ", round(100 * mean(1 * (dt$X001 == 1), na.rm = T), 3), "%."))
+print(paste0("The percentage of females: ", round(100 * mean(1 * (dt$X001 == 2), na.rm = T), 3), "%."))
+```
+
+
+```{r other distributions}
+# age
+plot_ly(data=dt, x = ~X003, xbins = list(size = 5), type = "histogram") %>% 
+  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+         xaxis = list(title = 'Age', titlefont = list(size = 16), tick0 = 0, dtick = 5, tickangle=0),
+         height=200, width=600)
+
+# year
+plot_ly(data=dt, x = ~S020, xbins = list(size = 1), type = "histogram") %>% 
+  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+         xaxis = list(title = 'Year', titlefont = list(size = 16), tick0 = 1981, dtick = 1, tickangle=90),
+         height=200, width=800)
+
+# income
+dt$tmp_income <- ifelse(!is.na(dt$S002), dt$X047_WVS ,dt$X047_EVS)
+plot_ly(data=dt, x = ~tmp_income, xbins = list(size = 1), type = "histogram") %>% 
+  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+         xaxis = list(title = 'Income Percentile', titlefont = list(size = 16), tick0 = 1, dtick = 1, tickangle=0),
+         height=300, width=700)
+dt$tmp_income <- NULL
+```
+
+```{r country distributions}
+# observations
+obs_per_country <- dt[, .N, by=country_name]
+obs_per_country <- obs_per_country[order(country_name)]
+plot_ly(data=obs_per_country, x = ~country_name, y = ~N, type = "bar") %>% 
+  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+         xaxis = list(title = 'Country', titlefont = list(size = 16), tickmode='linear'),
+         height=400, width=1100)
+
+
+per_country <- dt[, .(mean_age=mean(X003, na.rm=T),
+                      mean_n_children=mean(X011, na.rm=T),
+                      mean_), 
+                  by=country_name]
+obs_per_country <- obs_per_country[order(country_name)]
+plot_ly(data=obs_per_country, x = ~country_name, y = ~N, type = "bar") %>% 
+  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+         xaxis = list(title = 'Country', titlefont = list(size = 16), tickmode='linear'),
+         height=400, width=1100)
+
+```
