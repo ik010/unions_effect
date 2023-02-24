@@ -26,41 +26,83 @@ library(tidyverse)
 # library(htmltools )
 # library(formattable)
 
-DATA_DIR <-  "C:/Users/user/Documents/labor_eco/final_project"
-COUNTRY_CODES_PATH <- file.path(DATA_DIR, 'cow_country_codes.csv')
+# Inbar:
+# DATA_DIR <- "C:/Users/user/Documents/labor_eco/final_project"
+# OFFICIAL_UNION_DATA_PATH <- file.path(DATA_DIR, "unions_effect/data-jnKbb.csv")
+
+# Noam:
+DATA_DIR <- "/Users/noam/Personal/HUJI/Labor Economics/Final Project/data"
+OFFICIAL_UNION_DATA_PATH <- file.path(DATA_DIR, "data-jnKbb.csv")
+
+# both:
+COUNTRY_COW_CODES_PATH <- file.path(DATA_DIR, 'cow_country_codes.csv')
+COUNTRY_ISO_CODES_PATH <- file.path(DATA_DIR, 'wikipedia-iso-country-codes.csv')
 IVS_PATH <- file.path(DATA_DIR, 'Integrated_values_surveys_1981-2021.dta')
 ```
 
-# Data Loading and Setup
+# useful functions
+```{r}
+beutify_percent <- function(num) {
+  sprintf("%.3f%%", num)
+}
 
-```{r country codes}
-country_codes <- unique(data.table(read.csv(COUNTRY_CODES_PATH)))
-colnames(country_codes) <- c("country_short_name", "COW_NUM", "country_name")
-country_codes
+print_dt <- function(dt){
+  dt_to_print <- dt %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
+  column_spec(1, bold = T)
+  
+  print(dt_to_print)
+}
+
+check_null_percent <- function(dt, col) {
+  # calculate the percentage of null observation in the col given
+  non_nas_rows <- nrow(dt[!is.na(dt[[col]]), ])
+  non_nas_percent <- non_nas_rows / nrow(dt) * 100
+  non_nas_percent_display <- beutify_percent(non_nas_percent)
+  non_nas_percent_display
+}
 ```
 
+
+# Data Loading and Setup
+## Mapping between country code to their names
+```{r country codes}
+country_cow_codes <- unique(data.table(read.csv(COUNTRY_COW_CODES_PATH)))
+colnames(country_cow_codes) <- c("country_short_name", "COW_NUM", "country_name")
+
+country_iso_codes <- unique(data.table(read.csv(COUNTRY_ISO_CODES_PATH)))
+country_iso_codes <- country_iso_codes[, .(English.short.name.lower.case, Alpha.3.code)]
+colnames(country_iso_codes) <- c("country_name", "country_short_name")
+```
+
+## Official union data
 ```{r}
- unions_data  <- data.table(read_csv("C:/Users/user/Documents/labor_eco/final_project/unions_effect/data-jnKbb.csv"))
-colnames(unions_data) <- c("con_code", "country_update","source", "union_rate", "rate_note", "source_note")
+unions_data  <- data.table(read.csv(OFFICIAL_UNION_DATA_PATH))
+colnames(unions_data) <- c("country_short_name", "country_update","source", "union_rate", "rate_note", "source_note")
 europe_contries <- c("AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU", "GRC", "HUN", "IRL", "ITA", "LVA", "LTU", "LUX", "MLT", "NLD", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "SWE")
 ```
 
-```{r}
-paste0("avg worldiwde: ", mean(unions_data$union_rate))
-```
 
 ```{r}
-paste0("avg european countries: ", mean(unions_data$union_rate[unions_data$con_code %in% europe_contries]))
+merged_union_data <- merge(unions_data, country_iso_codes, by='country_short_name', all=T)
+merged_union_data <- merged_union_data[, .(country_name, union_rate)]
+merged_union_data
 ```
+
+Some statistics about union membership around the world:
 ```{r}
-paste0("avg Israel: ", mean(unions_data$union_rate[unions_data$con_code == "ISR"]))
+print(paste0("Worldiwde Average: ", beutify_percent(mean(unions_data$union_rate))))
+print(paste0("European Countries Average: ", beutify_percent(mean(unions_data$union_rate[unions_data$country_short_name %in% europe_contries]))))
+print(paste0("Israel Average: ", beutify_percent(mean(unions_data$union_rate[unions_data$country_short_name == "ISR"]))))
 ```
 
-
+## IVS data
 ```{r original data}
-# original_dt <- data.table(read_dta(IVS_PATH))
-# dt <- merge(original_dt, country_codes, by="COW_NUM")
-# rm(original_dt)
+original_dt <- data.table(read_dta(IVS_PATH))
+dt <- merge(original_dt, country_cow_codes, by="COW_NUM")
+rm(original_dt)
 ```
 
 ```{r}
@@ -82,37 +124,25 @@ mini_dt <- subset(dt, select = c(
                   )
 mini_dt <- mini_dt[, wvs_wave_obs_count := .N, by=.(S002)]
 obs_from_evs <- unique(mini_dt$wvs_wave_obs_count[is.na(mini_dt$S002)])
-paste0("The percent of EVS obs: ", sprintf("%.3f%%", (obs_from_evs/ nrow(dt)) * 100))
+print(paste0("The percent of EVS obs: ", beutify_percent((obs_from_evs/ nrow(dt)) * 100)))
+rm(mini_dt)
 ```
 
-
 ```{r remove countries with too little observations}
-rm(mini_dt)
 dt <- dt[, country_obs_count := .N, by=.(country_name)]
 dt <- dt[country_obs_count > 500]
 ```
 
 
-#code
-
+# code
+Increasing the memory limit so the session will not terminate:
 ```{r}
 #so the enviorment will handle all the data frames-
 memory.limit(50000)
 ```
 
-```{r}
-print_dt <- function(dt){
-  dt_to_print <- dt %>%
-  kbl() %>%
-  kable_classic(full_width = F, html_font = "Cambria") %>%
-  kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
-  column_spec(1, bold = T)
-  
-  print(dt_to_print)
-}
-```
-
-
+## Splitting the IVS into waves
+This is done so it will be easier to format the variables, as the variables names are slightly different from wave to wave.
 ```{r split into waves}
 WVS_all_waves <- dt[!is.na(S002)]
 WVS1 <- WVS_all_waves[S002 == 1]
@@ -131,13 +161,29 @@ EVS5 <- EVS_all_waves[S002EVS == 5]
 ```
 
 # Creating a table will all the relevant nulls
-
 ## setting up the table
 ```{r}
-wvs_list <- list(WVS1, WVS2, WVS3, WVS4, WVS5, WVS6, WVS7, EVS1, EVS2, EVS3, EVS4, EVS5)
+raw_waves <- list(WVS1, WVS2, WVS3, WVS4, WVS5, WVS6, WVS7, EVS1, EVS2, EVS3, EVS4, EVS5)
 nulls_table <- data.frame(matrix(ncol = 13, nrow = 18))
-colnames(nulls_table) <- c("WVS1", "WVS2", "WVS3", "WVS4", "WVS5", "WVS6", "WVS7", "EVS1", "EVS2", "EVS3", "EVS4", "EVS5", "Total observations")
-rownames(nulls_table) <- c("Full-time employment rate", "Full-time employment obs", "Filled data about education","Filled education obs ", "Filled data about age","Filled age obs", "Filled data about attachment to religion", "Filled religion obs", "Filled data about union", "Filled union obs", "Filled data about marital status", "Filled marital status obs", "Filled data about children number", "Filled children number obs", "Filled data about income", "Filled income obs", "Assigned weights normalizaion", "Weights normalization filled obs")
+colnames(nulls_table) <- c("WVS1", "WVS2", "WVS3", "WVS4", "WVS5", "WVS6", "WVS7", "EVS1", "EVS2", "EVS3", "EVS4", "EVS5", "Total")
+rownames(nulls_table) <- c("Employment - Filled Data Ratio", 
+                           "Employment - Filled Data Obs", 
+                           "Education - Filled Data Ratio",  
+                           "Education - Filled Data Obs ", 
+                           "Age - Filled Data Ratio", 
+                           "Age - Filled Data Obs", 
+                           "Attachment to Religion - Filled Data Ratio", 
+                           "Attachment to Religion - Filled Data Obs", 
+                           "Union Membership - Filled Data Ratio", 
+                           "Union Membership - Filled Data Obs", 
+                           "Marital Status - Filled Data Ratio", 
+                           "Marital Status - Filled Data  Obs", 
+                           "No. of Children - Filled Data Ratio", 
+                           "No. of Children - Filled Data Obs", 
+                           "Income - Filled Data Ratio", 
+                           "Income - Filled Data Obs", 
+                           "Weights Normalizaion Assignment Ratio", 
+                           "Weights Normalizaion Assignment Obs")
 ```
 
 ##  useful tools for later
@@ -145,59 +191,50 @@ rownames(nulls_table) <- c("Full-time employment rate", "Full-time employment ob
 raw_educ_nulls <- c()
 raw_income_nulls <- c()
 raw_religious_nulls <- c()
-raw_employed_nulls <- c()
+raw_employment_nulls <- c()
 raw_union_nulls <- c()
 raw_age_nulls <- c()
 raw_weights_nulls <- c()
 raw_marital_status_nulls <- c()
 raw_gender_nulls <- c()
 raw_n_children_nulls <- c()
-
-beutify_percent <- function(num) {
-  sprintf("%.3f%%", num)
-}
 ```
 
-#handling the different fields
+## Creating the nulls table
 ```{r}
 for (i in 1:12) {
-  cur_wave <- wvs_list[[i]]
-  row_num <-  nrow(wvs_list[[i]])
+  cur_wave <- raw_waves[[i]]
+  row_num <-  nrow(cur_wave)
   
-  # employed rate
-  employed_rows <- cur_wave[X028 == 1,]
-  employed_percent <- nrow(employed_rows) /row_num  * 100
-  raw_employed_nulls[[length(raw_employed_nulls)+1]] = employed_percent 
-  nulls_table[1,i] <- beutify_percent(employed_percent)
-  # employed obs
-  nulls_table[2,i] <-  as.numeric(nrow(employed_rows))
+  # employment
+  employment_rows <- cur_wave[!is.na(X028),]
+  employment_percent <- nrow(employment_rows) / row_num * 100
+  raw_employment_nulls[[length(raw_employment_nulls)+1]] = employment_percent
+  nulls_table[1,i] <- beutify_percent(employment_percent)
+  nulls_table[2,i] <- as.numeric(nrow(employment_rows))
 
-  # education non-null rate
-  education_rows <- if (i == 7) cur_wave[!is.na(X025A_01)] else cur_wave[!is.na(X025)]
-  education_percent <-  nrow(education_rows) / row_num  * 100
-  raw_educ_nulls[[length(raw_educ_nulls)+1]] = education_percent 
-  nulls_table[3,i] <- beutify_percent(education_percent)
-  #educ obs
-  nulls_table[4,i] <- as.numeric(nrow(education_rows))
+  # education
+  educ_rows <- if (i == 7) cur_wave[!is.na(X025A_01)] else cur_wave[!is.na(X025)]
+  educ_percent <-  nrow(educ_rows) / row_num  * 100
+  raw_educ_nulls[[length(raw_educ_nulls)+1]] = educ_percent 
+  nulls_table[3,i] <- beutify_percent(educ_percent)
+  nulls_table[4,i] <- as.numeric(nrow(educ_rows))
 
-  
-  # age non-null rate
+  # age
   age_rows <- cur_wave[!is.na(X003),]
   age_percent <- nrow(age_rows) / row_num * 100
   raw_age_nulls[[length(raw_age_nulls)+1]] = age_percent
   nulls_table[5,i] <- beutify_percent(age_percent)
-  # age non-null obs
   nulls_table[6,i] <- as.numeric(nrow(age_rows))
 
-  # religion non-null rate
-  religion_rows <- cur_wave[F034 %in% c(1, 2, 3),]
+  # religion
+  religion_rows <- cur_wave[!is.na(F034),]
   religion_percent <-nrow(religion_rows) / row_num * 100
   raw_religious_nulls[[length(raw_religious_nulls)+1]] = religion_percent
   nulls_table[7,i] <- beutify_percent(religion_percent)
-  # religion non-null obs
   nulls_table[8,i] <- as.numeric(nrow(religion_rows))
 
-  # income non-null rate
+  # union
   union_rows <-
   if (i %in% c(1, 3, 5:7)){
       cur_wave[!is.na(cur_wave$A101),]
@@ -207,26 +244,23 @@ for (i in 1:12) {
   union_percent <-nrow(union_rows) / row_num * 100
   raw_union_nulls[[length(raw_union_nulls)+1]] = union_percent
   nulls_table[9,i] <- beutify_percent(union_percent)
-  # income non-null obs
   nulls_table[10,i] <- as.numeric(nrow(union_rows))
 
-   # marital_status non-null rate
+  # marital_status
   marital_status_rows <- cur_wave[!is.na(X007),]
-  weights_percent <- nrow(marital_status_rows) / row_num * 100
-  raw_marital_status_nulls[[length(raw_marital_status_nulls)+1]] = weights_percent
-  nulls_table[11,i] <- beutify_percent(weights_percent)
-  # marital_status non-null obs
+  marital_status_percent <- nrow(marital_status_rows) / row_num * 100
+  raw_marital_status_nulls[[length(raw_marital_status_nulls)+1]] = marital_status_percent
+  nulls_table[11,i] <- beutify_percent(marital_status_percent)
   nulls_table[12,i] <- as.numeric(nrow(marital_status_rows))
   
-   # n_children non-null rate
+  # n_children
   n_children_rows <- cur_wave[!is.na(X011),]
   n_children_percent <- nrow(n_children_rows) / row_num * 100
   raw_n_children_nulls[[length(raw_n_children_nulls)+1]] = n_children_percent
   nulls_table[13,i] <- beutify_percent(n_children_percent)
-  # n_children non-null obs
   nulls_table[14,i] <- as.numeric(nrow(n_children_rows))
   
-  # income non-null rate
+  # income
   income_rows <- 
     if (i %in% c(1:7)){
       cur_wave[!is.na(cur_wave$X047_WVS),]
@@ -236,28 +270,95 @@ for (i in 1:12) {
   income_percent <-nrow(income_rows) / row_num * 100
   raw_income_nulls[[length(raw_income_nulls)+1]] = income_percent
   nulls_table[15,i] <- beutify_percent(income_percent)
-  # income non-null obs
   nulls_table[16,i] <- as.numeric(nrow(income_rows))
   
-  #weights non-null rate
+  #weights
   weights_rows <- cur_wave[!is.na(pwght),]
   weights_percent <- nrow(weights_rows) / row_num * 100
   raw_weights_nulls[[length(raw_weights_nulls)+1]] = weights_percent
   nulls_table[17,i] <- beutify_percent(weights_percent)
-  # weights non-null obs
   nulls_table[18,i] <- as.numeric(nrow(weights_rows))
 }
-
-# total_obs = c()
-# for (i in 1:13){
-  
-# nulls_table <- nulls_table %>% 
-#       mutate(Total = rowSums(across(where(is.numeric))))
 ```
 
-## Presenting
+## Filling in the total column
 ```{r}
-  nulls_table_to_show <- nulls_table %>%
+# add the total column
+row_num <- nrow(dt)
+
+# employed
+employment_rows <- dt[!is.na(X028),]
+employment_percent <- nrow(employment_rows) / row_num * 100
+raw_employment_nulls[[length(raw_employment_nulls)+1]] = employment_percent
+nulls_table[1,13] <- beutify_percent(employment_percent)
+nulls_table[2,13] <- as.numeric(nrow(employment_rows))
+
+# education
+educ_rows <- dt[(S002 == 7 & !is.na(X025A_01)) | !is.na(X025)]
+educ_percent <-  nrow(educ_rows) / row_num  * 100
+raw_educ_nulls[[length(raw_educ_nulls)+1]] = educ_percent
+nulls_table[3,13] <- beutify_percent(educ_percent)
+nulls_table[4,13] <- as.numeric(nrow(educ_rows))
+rm(educ_rows)
+
+# age
+age_rows <- dt[!is.na(X003)]
+age_percent <- nrow(age_rows) / row_num * 100
+raw_age_nulls[[length(raw_age_nulls)+1]] = age_percent
+nulls_table[5,13] <- beutify_percent(age_percent)
+nulls_table[6,13] <- as.numeric(nrow(age_rows))
+rm(age_rows)
+
+# religion
+religion_rows <- dt[!is.na(F034),]
+religion_percent <-nrow(religion_rows) / row_num * 100
+raw_religious_nulls[[length(raw_religious_nulls)+1]] = religion_percent
+nulls_table[7,13] <- beutify_percent(religion_percent)
+nulls_table[8,13] <- as.numeric(nrow(religion_rows))
+rm(religion_rows)
+
+# union
+union_rows <- dt[(S002 %in% c(1, 3, 5:7) & !is.na(A101)) | (!is.na(A067)),]
+union_percent <-nrow(union_rows) / row_num * 100
+raw_union_nulls[[length(raw_union_nulls)+1]] = union_percent
+nulls_table[9,13] <- beutify_percent(union_percent)
+nulls_table[10,13] <- as.numeric(nrow(union_rows))
+rm(union_rows)
+
+# marital_status
+marital_status_rows <- dt[!is.na(X007),]
+marital_status_percent <- nrow(marital_status_rows) / row_num * 100
+raw_marital_status_nulls[[length(raw_marital_status_nulls)+1]] = marital_status_percent
+nulls_table[11,13] <- beutify_percent(marital_status_percent)
+nulls_table[12,13] <- as.numeric(nrow(marital_status_rows))
+rm(marital_status_rows)
+
+# n_children
+n_children_rows <- dt[!is.na(X011),]
+n_children_percent <- nrow(n_children_rows) / row_num * 100
+nulls_table[13,13] <- beutify_percent(n_children_percent)
+nulls_table[14,13] <- as.numeric(nrow(n_children_rows))
+rm(n_children_rows)
+
+# income
+income_rows <- dt[(!is.na(S002) & !is.na(X047_WVS)) | (!is.na(S002EVS) & !is.na(X047_EVS))]
+income_percent <-nrow(income_rows) / row_num * 100
+raw_income_nulls[[length(raw_income_nulls)+1]] = income_percent
+nulls_table[15,13] <- beutify_percent(income_percent)
+nulls_table[16,13] <- as.numeric(nrow(income_rows))
+rm(income_rows)
+
+#weights
+weights_rows <- dt[!is.na(pwght),]
+weights_percent <- nrow(weights_rows) / row_num * 100
+nulls_table[17,13] <- beutify_percent(weights_percent)
+nulls_table[18,13] <- as.numeric(nrow(weights_rows))
+rm(weights_rows)
+```
+
+## Presenting the null table
+```{r}
+nulls_table_to_show <- nulls_table %>%
   kbl() %>%
   kable_classic(full_width = F, html_font = "Cambria") %>%
   kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
@@ -276,7 +377,7 @@ nulls_table_to_show # show the formatted table
 ```
 
 
-
+# IVS Data Formatting
 ```{r basic function}
 basic_dt <- function(raw_dt, wvs) {
   # returns the dt with the columns that exists in all waves
@@ -351,14 +452,11 @@ unified_string_to_number_education <- function(raw_dt, categories_col) {
   # 1 = Less than primary
   # 2 = Primary
   # 3 = middle school and high school
-  # 4 = post high school courses (13 grade, extra proffesional course)
+  # 4 = post high school courses (13 grade, extra professional course)
   # 5 = Some university education (no degree)
   # 6 = University Degree
-  
 }
 ```
-
-
 
 
 ```{r specific WVS functions}
@@ -460,13 +558,11 @@ format_WVS7 <- function(raw_dt) {
 ```
 
 
-
-
 ```{r specific EVS functions}
 format_EVS1 <- function(raw_dt) {
   dt1 <- basic_dt(raw_dt, FALSE)
   dt1$educ = NA  # no education in this wave
-  filter_irrelvant_data(dt1)
+  dt1 <- filter_irrelvant_data(dt1)
   
   dt1
 }
@@ -523,122 +619,68 @@ formatted_EVS2 <- format_EVS2(EVS2)
 formatted_EVS3 <- format_EVS3(EVS3)
 formatted_EVS4 <- format_EVS4(EVS4)
 formatted_EVS5 <- format_EVS5(EVS5)
+
+formatted_waves <- list(formatted_WVS1, formatted_WVS2, formatted_WVS3, formatted_WVS4, formatted_WVS5, formatted_WVS6, formatted_WVS7,
+                        formatted_EVS1, formatted_EVS2, formatted_EVS3, formatted_EVS4, formatted_EVS5)
 ```
 
-#Checking patterns in result
+```{r united formatted waves}
+formatted_WVS <- rbind(formatted_WVS1, formatted_WVS2, formatted_WVS3, formatted_WVS4, formatted_WVS5, formatted_WVS6, formatted_WVS7, fill=T)
+formatted_EVS <- rbind(formatted_EVS1, formatted_EVS2, formatted_EVS3, formatted_EVS4, formatted_EVS5, fill=T)
+formatted_dt <- rbind(formatted_WVS, formatted_EVS, fill=T)
 
-## creating functions to check nulls in data
-```{r}
-raw_waves <- list(
-        formatted_WVS1,
-        formatted_WVS2,
-        formatted_WVS3,
-        formatted_WVS4,
-        formatted_WVS5,
-        formatted_WVS6,
-        formatted_WVS7,
-        formatted_EVS1,
-        formatted_EVS2,
-        formatted_EVS3,
-        formatted_EVS4,
-        formatted_EVS5
-  )
-formatted_waves <- list(
-    WVS1,
-    WVS2,
-    WVS3,
-    WVS4,
-    WVS5,
-    WVS6, 
-    WVS7,
-    EVS1,
-    EVS2,
-    EVS3,
-    EVS4,
-    EVS5
-  )
+formatted_waves_with_total <- list(
+  formatted_WVS1, formatted_WVS2,formatted_WVS3, formatted_WVS4, formatted_WVS5, formatted_WVS6, formatted_WVS7,
+  formatted_EVS1, formatted_EVS2, formatted_EVS3, formatted_EVS4, formatted_EVS5, 
+  formatted_dt)
 ```
 
+# Checking patterns in result
 
+## check education after formatting and filtering
 ```{r}
-# define a function to calculate the percentage of null education observations
-check_null_percent <- function(dt, col) {
-  non_nas_rows <- nrow(dt[!is.na(dt[[col]]), ])
-  non_nas_percent <- non_nas_rows / nrow(dt) * 100
-  non_nas_percent_display <- beutify_percent(non_nas_percent)
-  non_nas_percent_display
-}
-
-```
-
-#check education
-
-```{r}
-# apply the check_null_percent function to each dataset
-# educ_non_null_percentages <- lapply(formatted_waves,function(dt){check_null_percent(dt, "X025")})
-
-educ_formatted_non_null_percentages <- lapply(raw_waves,function(dt){check_null_percent(dt, "educ")})
+educ_formatted_non_null_percentages <- lapply(formatted_waves_with_total, function(dt){check_null_percent(dt, "educ")})
 
 educ_compare <- data.table(
-  Dataset = c(paste0("WVS", 1:7), paste0("EVS", 1:5)),
+  Dataset = c(paste0("WVS", 1:7), paste0("EVS", 1:5), 'Total'),
   education_non_nulls_rate = lapply(raw_educ_nulls, beutify_percent), 
   Education_non_nulls_rate_after_cleaning = educ_formatted_non_null_percentages)
 
 # Print the updated table
 print_dt(educ_compare)
 
-
- save(educ_compare, file="educ_compare")
+save(educ_compare, file="educ_compare")
 ```
 
-#check union
+## check union after formatting and filtering
 ```{r}
-union_formatted_non_null_percentages <- lapply(raw_waves,function(dt){check_null_percent(dt, "union")})
+union_formatted_non_null_percentages <- lapply(formatted_waves_with_total, function(dt){check_null_percent(dt, "union")})
 
 union_compare <- data.table(
-  Dataset = c(paste0("WVS", 1:7), paste0("EVS", 1:5)),
+  Dataset = c(paste0("WVS", 1:7), paste0("EVS", 1:5), 'Total'),
   union_non_nulls_rate = lapply(raw_union_nulls, beutify_percent), 
   union_non_nulls_rate_after_cleaning = union_formatted_non_null_percentages)
 
-# Print the updated table
 print_dt(union_compare)
-
-
-#save(union_compare, file="union_compare")
+save(union_compare, file="union_compare")
 ```
 
-#check marital_status 
+## check mariatl status after formatting and filtering
 ```{r}
-marital_status_formatted_non_null_percentages <- lapply(raw_waves,function(dt){check_null_percent(dt, "marital_status")})
+marital_status_formatted_non_null_percentages <- lapply(formatted_waves_with_total, function(dt){check_null_percent(dt, "marital_status")})
 
 marital_status_compare <- data.table(
-  Dataset = c(paste0("WVS", 1:7), paste0("EVS", 1:5)),
+  Dataset = c(paste0("WVS", 1:7), paste0("EVS", 1:5), 'Total'),
   marital_status_non_nulls_rate = lapply(raw_marital_status_nulls, beutify_percent), 
   marital_status_non_nulls_rate_after_cleaning = marital_status_formatted_non_null_percentages)
 
 # Print the updated table
 print_dt(marital_status_compare)
-
+save(union_compare, file="marital_status_compare")
 ```
-We can actually see that full-timers are more willing to answer about their marital status.
-
 
 ```{r}
 # rm(EVS1, EVS2, EVS3, EVS4, EVS5, WVS1, WVS2, WVS3, WVS4, WVS5, WVS6, WVS7)
-```
-
-
-```{r united formatted waves}
-formatted_WVS <- rbind(formatted_WVS1,
-                       formatted_WVS2,
-                       formatted_WVS3,
-                       formatted_WVS4,
-                       formatted_WVS5,
-                       formatted_WVS6,
-                       formatted_WVS7,
-                       fill=T)
-formatted_EVS <- rbind(formatted_EVS1, formatted_EVS2, formatted_EVS3, formatted_EVS4, formatted_EVS5, fill=T)
-formatted_dt <- rbind(formatted_WVS, formatted_EVS, fill=T)
 ```
 
 ```{r}
@@ -678,89 +720,72 @@ formatted_dt <- rbind(formatted_WVS, formatted_EVS, fill=T)
 
 ```{r observation per country}
 obs_per_country <- formatted_dt[, .N, by=country]
-print(plot_ly(obs_per_country, x=~country, y=~N, type = 'bar'))
+plot_ly(obs_per_country, x=~country, y=~N, type = 'bar') %>% 
+  layout(xaxis = list(tickmode='linear'), width=1300)
 ```
 
 
-
+# Running Regressions
+## France
 ```{r}
 country_data <- formatted_dt[country == "France"]
 model <- feols(income ~ union + male + age + age2 + age3 | 
-                       year + employment_status + marital_status + educ + n_children, 
+                       year + marital_status + educ + n_children + religious, 
                      data=country_data, 
                      weights=~weights, 
                      se='hetero')
 print(model)
 ```
+
+## Italy
 ```{r}
 country_data <- formatted_dt[country == "Italy"]
 model <- feols(income ~ union + male + age + age2 + age3 | 
-                       year + employment_status + marital_status + educ + n_children, 
+                       year + marital_status + educ + n_children + religious, 
                      data=country_data, 
                      weights=~weights, 
                      se='hetero')
 print(model)
 
-
-function(dt, col) {
-  union_rows <- nrow(dt[(dt[["union"]] == 1), ])
-  non_nas_percent <- non_nas_rows / nrow(dt) * 100
-  non_nas_percent_display <- beutify_percent(non_nas_percent)
-  non_nas_percent_display
-}
-
 ```
 
+## Sweeden
 ```{r}
 country_data <- formatted_dt[country == "Sweden"]
 model <- feols(income ~ union + male + age + age2 + age3 | 
-                       year + employment_status + marital_status + educ + n_children, 
+                       year + marital_status + educ + n_children + religious, 
                      data=country_data, 
                      weights=~weights, 
                      se='hetero')
 print(model)
 
-
-function(dt, col) {
-  union_rows <- nrow(dt[(dt[["union"]] == 1), ])
-  non_nas_percent <- non_nas_rows / nrow(dt) * 100
-  non_nas_percent_display <- beutify_percent(non_nas_percent)
-  non_nas_percent_display
-}
-
-```
-## Reggressions and nulls_table
-
-```{r}
-neg_list <- c()
 ```
 
+## Reggression function - All countries
 ```{r regression function}
-regression_function <- function(dt, countries, neg_lst) {
+regression_function <- function(dt, countries) {
   results <- list()
   i <- 1
   
   for (co in countries) {
     country_data <- dt[country == co]
-    
-    # country_data <- country_data[employment_status != 4 &  # retired
-    #                              employment_status != 7    # unemployed
-    #                             ]
+    nrow_country_data <- nrow(country_data)
+    union_rate_in_dt <- 100 * nrow(country_data[union == 1]) / nrow(country_data[!is.na(union)])
     
     print(paste0(co, " ", nrow(country_data), " "))
     tryCatch({
-    
       model <- feols(income ~ union + male + age + age2 + age3 | 
-                       year + employment_status + marital_status + educ + n_children, 
+                       year + marital_status + educ + n_children + religious, 
                      data=country_data, 
                      weights=~weights, 
                      se='hetero')
-      #print(model)
-      if(model$coeftable[1,1] <= 0) {
-        neg_list[[length(neg_list)+1]] = co 
-      }
-      result <- model$coeftable %>% as.data.frame() %>% head(1) %>% mutate(country=co)
-      colnames(result) <- c("Estimate", "sd", "t_value", "pr_t", "country")
+      result <- model$coeftable %>% as.data.frame() %>% head(1) %>% 
+        mutate(country=co, 
+               country_n_obs=nrow_country_data, 
+               regresion_n_obs=model$nobs,
+               union_rate=union_rate_in_dt)
+      colnames(result) <- c("Estimate", "sd", "t_value", "pr_t", "country_name", 
+                            'country_n_obs', 'regresion_n_obs', 'union_rate_in_data')
       results[[i]] <- result
       i <- i + 1
    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
@@ -768,8 +793,14 @@ regression_function <- function(dt, countries, neg_lst) {
   
   results <- data.table(bind_rows(results))
   results <- results[order(-Estimate),]
-  results
+  
+  merged_results <- merge(results, merged_union_data, by='country_name', all.x=T)
+  merged_results
 }
+
+```
+
+```{r}
 countries <- sort(unique(formatted_dt$country))
 results <- regression_function(formatted_dt, countries)
 male_results <- regression_function(formatted_dt[male == 1,], countries)
@@ -778,24 +809,51 @@ under_age_35_results <- regression_function(formatted_dt[age <= 35 ,], countries
 over_age_35_results <- regression_function(formatted_dt[age > 35 ,], countries)
 ```
 
+## Pretty Tables of the Results
+```{r}
+pretty_results_table <- function(results, with_official_union=F) {
+  results <- results[order(country_name)]
+  if (with_official_union) {
+    pretty_results <- results
+    colnames(pretty_results) <- c("Country", "Union Membership Estimate", "Std. Error", "t value", "Pr(>|t|)", 
+                                  "No. Observation", "Reggression No. Observation", 'Union Rate', 'Official Union Rate')  
+  } else {
+    pretty_results <- results[, .(country_name, Estimate, sd, t_value, pr_t, country_n_obs, regresion_n_obs, union_rate_in_data)]
+    colnames(pretty_results) <- c("Country", "Union Membership Estimate", "Std. Error", "t value", "Pr(>|t|)", 
+                                  "No. Observation", "Reggression No. Observation", 'Union Rate')  
+  }
+  
+  results_table_to_show <- pretty_results %>%
+    kbl() %>%
+    kable_classic(full_width = F, html_font = "Cambria") %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
+    column_spec(1, bold = T)
+  results_table_to_show  
+}
+
+pretty_results_table(results, T)
+pretty_results_table(male_results)
+pretty_results_table(female_results)
+pretty_results_table(results)
+pretty_results_table(results)
+
+```
 
 
 ```{r plot, echo=FALSE}
-plot_ly(results, x = ~country) %>% 
-  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
-  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country")
-plot_ly(male_results, x = ~country) %>% 
-  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
-  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Male")
-plot_ly(female_results, x = ~country) %>% 
-  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
-  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Female")
-plot_ly(under_age_35_results, x = ~country) %>% 
-  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
-  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Ages <= 35")
-plot_ly(over_age_35_results, x = ~country) %>% 
-  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
-  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country), title="Union Premium per Country - Ages > 35")
+plot_results <- function(results, title) {
+  plot <- plot_ly(results, x = ~country_name) %>% 
+    add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
+    layout(xaxis = list(categoryorder = "total descending", tickvals = ~country_name, title=""), title=title)
+  plot
+}
+
+plot_results(results, "Union Premium per Country")
+plot_results(male_results, "Union Premium per Country - Male")
+plot_results(female_results, "Union Premium per Country - Female")
+plot_results(under_age_35_results, "Union Premium per Country - Age <= 35")
+plot_results(over_age_35_results, "Union Premium per Country - Age > 35 ")
+
 ```
 
 
@@ -814,3 +872,4 @@ plot_ly(over_age_35_results, x = ~country) %>%
 # if we want, we can do the same to the other fixed effect, and answer the question: 
 # "How much of the income variance can be explained by ___?" where ___ can be also year, employment_status, marital_status
 ```
+
