@@ -93,20 +93,32 @@ dt$tmp_income <- NULL
 # observations
 obs_per_country <- dt[, .N, by=country_name]
 obs_per_country <- obs_per_country[order(country_name)]
-plot_ly(data=obs_per_country, x = ~country_name, y = ~N, type = "bar") %>% 
-  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+plot_ly(data=obs_per_country, x = ~country_name, y = ~N, type = "bar") %>%
+  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)),
          xaxis = list(title = 'Country', titlefont = list(size = 16), tickmode='linear'),
          height=400, width=1100)
 
 
 per_country <- dt[, .(mean_age=mean(X003, na.rm=T),
                       mean_n_children=mean(X011, na.rm=T),
-                      mean_), 
+                      mean_interview_length=mean(S010, na.rm=T)),
                   by=country_name]
-obs_per_country <- obs_per_country[order(country_name)]
-plot_ly(data=obs_per_country, x = ~country_name, y = ~N, type = "bar") %>% 
-  layout(yaxis = list(title = 'No. Observations', titlefont = list(size = 16)), 
+
+# mean age
+plot_ly(data=per_country, x = ~country_name, y = ~mean_age, type = "bar") %>%
+  layout(yaxis = list(title = 'Mean Age', titlefont = list(size = 16)),
          xaxis = list(title = 'Country', titlefont = list(size = 16), tickmode='linear'),
          height=400, width=1100)
 
+# mean n_children
+plot_ly(data=per_country, x = ~country_name, y = ~mean_n_children, type = "bar") %>%
+  layout(yaxis = list(title = 'Mean No. Children', titlefont = list(size = 16)),
+         xaxis = list(title = 'Country', titlefont = list(size = 16), tickmode='linear'),
+         height=400, width=1100)
+
+# mean mean_interview_length
+plot_ly(data=per_country, x = ~country_name, y = ~mean_interview_length, type = "bar") %>%
+  layout(yaxis = list(title = 'Mean Interview Length', titlefont = list(size = 16)),
+         xaxis = list(title = 'Country', titlefont = list(size = 16), tickmode='linear'),
+         height=400, width=1100)
 ```
