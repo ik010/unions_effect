@@ -106,7 +106,7 @@ rm(original_dt)
 ```
 
 ```{r}
-load(file="dt")
+# load(file="dt")
 ```
 
 ```{r}
@@ -137,8 +137,8 @@ dt <- dt[country_obs_count > 500]
 # code
 Increasing the memory limit so the session will not terminate:
 ```{r}
-#so the enviorment will handle all the data frames-
-memory.limit(50000)
+# so the enviorment will handle all the data frames-
+# memory.limit(50000)
 ```
 
 ## Splitting the IVS into waves
@@ -686,6 +686,7 @@ save(union_compare, file="marital_status_compare")
 ```{r}
 # save(formatted_dt, file="formatted_dt")
 ```
+
 ```{r}
 # rm(formatted_EVS1, formatted_EVS2, formatted_EVS3, formatted_EVS4, formatted_EVS5)
 # rm(formatted_WVS1, formatted_WVS2, formatted_WVS3, formatted_WVS4, formatted_WVS5, formatted_WVS6, formatted_WVS7)
@@ -721,7 +722,7 @@ save(union_compare, file="marital_status_compare")
 ```{r observation per country}
 obs_per_country <- formatted_dt[, .N, by=country]
 plot_ly(obs_per_country, x=~country, y=~N, type = 'bar') %>% 
-  layout(xaxis = list(tickmode='linear'), width=1300)
+  layout(xaxis = list(tickmode='linear'))
 ```
 
 
@@ -763,6 +764,8 @@ print(model)
 
 ## Reggression function - All countries
 ```{r regression function}
+
+setFixest_notes(FALSE)
 regression_function <- function(dt, countries) {
   results <- list()
   i <- 1
@@ -807,6 +810,9 @@ male_results <- regression_function(formatted_dt[male == 1,], countries)
 female_results <- regression_function(formatted_dt[male == 0,], countries)
 under_age_35_results <- regression_function(formatted_dt[age <= 35 ,], countries)
 over_age_35_results <- regression_function(formatted_dt[age > 35 ,], countries)
+uneducated_results <- regression_function(formatted_dt[educ < 6 ,], countries)
+educated_results <- regression_function(formatted_dt[educ == 6 ,], countries)
+
 ```
 
 ## Pretty Tables of the Results
@@ -834,8 +840,10 @@ pretty_results_table <- function(results, with_official_union=F) {
 pretty_results_table(results, T)
 pretty_results_table(male_results)
 pretty_results_table(female_results)
-pretty_results_table(results)
-pretty_results_table(results)
+pretty_results_table(under_age_35_results)
+pretty_results_table(over_age_35_results)
+pretty_results_table(uneducated_results)
+pretty_results_table(educated_results)
 
 ```
 
@@ -852,7 +860,9 @@ plot_results(results, "Union Premium per Country")
 plot_results(male_results, "Union Premium per Country - Male")
 plot_results(female_results, "Union Premium per Country - Female")
 plot_results(under_age_35_results, "Union Premium per Country - Age <= 35")
-plot_results(over_age_35_results, "Union Premium per Country - Age > 35 ")
+plot_results(over_age_35_results, "Union Premium per Country - Age > 35")
+plot_results(uneducated_results, "Union Premium per Country - Without University Degree")
+plot_results(educated_results, "Union Premium per Country - With University Degree")
 
 ```
 
