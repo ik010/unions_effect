@@ -39,6 +39,24 @@ colnames(country_codes) <- c("country_short_name", "COW_NUM", "country_name")
 country_codes
 ```
 
+```{r}
+ unions_data  <- data.table(read_csv("C:/Users/user/Documents/labor_eco/final_project/unions_effect/data-jnKbb.csv"))
+colnames(unions_data) <- c("con_code", "country_update","source", "union_rate", "rate_note", "source_note")
+europe_contries <- c("AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU", "GRC", "HUN", "IRL", "ITA", "LVA", "LTU", "LUX", "MLT", "NLD", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "SWE")
+```
+
+```{r}
+paste0("avg worldiwde: ", mean(unions_data$union_rate))
+```
+
+```{r}
+paste0("avg european countries: ", mean(unions_data$union_rate[unions_data$con_code %in% europe_contries]))
+```
+```{r}
+paste0("avg Israel: ", mean(unions_data$union_rate[unions_data$con_code == "ISR"]))
+```
+
+
 ```{r original data}
 # original_dt <- data.table(read_dta(IVS_PATH))
 # dt <- merge(original_dt, country_codes, by="COW_NUM")
@@ -280,7 +298,7 @@ basic_dt <- function(raw_dt, wvs) {
     dt$income <- raw_dt$X047_WVS 
   } else {
     dt$income <- raw_dt$X047_EVS
-    dt$union <- raw_dt$A067  # in EVS, all waves have the same parameter
+    dt$union <- as.numeric(raw_dt$A067)# in EVS, all waves have the same parameter
   }
   
   dt
@@ -366,7 +384,7 @@ format_WVS2 <- function(raw_dt) {
   raw_dt <- number_to_string_education_8_categories(raw_dt)
   raw_dt$educ <- unified_string_to_number_education(raw_dt, raw_dt$X025)
   dt <- basic_dt(raw_dt, TRUE)
-  dt$union <- raw_dt$A067
+  dt$union <- as.numeric(raw_dt$A067)
   dt<- filter_irrelvant_data(dt)
   
   dt
@@ -393,7 +411,7 @@ format_WVS4 <- function(raw_dt) {
   
   dt <- basic_dt(raw_dt, TRUE)
   
-  dt$union <- raw_dt$A067
+  dt$union <- as.numeric(raw_dt$A067)
   dt<- filter_irrelvant_data(dt)
   
   dt
@@ -546,11 +564,8 @@ formatted_waves <- list(
 # define a function to calculate the percentage of null education observations
 check_null_percent <- function(dt, col) {
   non_nas_rows <- nrow(dt[!is.na(dt[[col]]), ])
-  print(paste0(" non na rows are ", non_nas_rows))
   non_nas_percent <- non_nas_rows / nrow(dt) * 100
-  print(paste0("non_nas_percent are ", non_nas_percent))
   non_nas_percent_display <- beutify_percent(non_nas_percent)
-  print(paste0("non_nas_percent_display are ", non_nas_percent_display))
   non_nas_percent_display
 }
 
@@ -614,7 +629,14 @@ We can actually see that full-timers are more willing to answer about their mari
 
 
 ```{r united formatted waves}
-formatted_WVS <- rbind(formatted_WVS1, formatted_WVS2, formatted_WVS3, formatted_WVS4, formatted_WVS5, formatted_WVS6, formatted_WVS7, fill=T)
+formatted_WVS <- rbind(formatted_WVS1,
+                       formatted_WVS2,
+                       formatted_WVS3,
+                       formatted_WVS4,
+                       formatted_WVS5,
+                       formatted_WVS6,
+                       formatted_WVS7,
+                       fill=T)
 formatted_EVS <- rbind(formatted_EVS1, formatted_EVS2, formatted_EVS3, formatted_EVS4, formatted_EVS5, fill=T)
 formatted_dt <- rbind(formatted_WVS, formatted_EVS, fill=T)
 ```
@@ -689,7 +711,24 @@ function(dt, col) {
 
 ```
 
+```{r}
+country_data <- formatted_dt[country == "Sweden"]
+model <- feols(income ~ union + male + age + age2 + age3 | 
+                       year + employment_status + marital_status + educ + n_children, 
+                     data=country_data, 
+                     weights=~weights, 
+                     se='hetero')
+print(model)
 
+
+function(dt, col) {
+  union_rows <- nrow(dt[(dt[["union"]] == 1), ])
+  non_nas_percent <- non_nas_rows / nrow(dt) * 100
+  non_nas_percent_display <- beutify_percent(non_nas_percent)
+  non_nas_percent_display
+}
+
+```
 ## Reggressions and nulls_table
 
 ```{r}
