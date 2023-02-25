@@ -1,6 +1,6 @@
 ---
 title: "The Effect of Union Membership on Household Income"
-author: "Noam Winograd"
+author: "Noam Winograd and Inbar Karo"
 date: "2023-02-18"
 output: html_document
 ---
@@ -774,8 +774,6 @@ regression_function <- function(dt, countries) {
     country_data <- dt[country == co]
     nrow_country_data <- nrow(country_data)
     union_rate_in_dt <- 100 * nrow(country_data[union == 1]) / nrow(country_data[!is.na(union)])
-    
-    print(paste0(co, " ", nrow(country_data), " "))
     tryCatch({
       model <- feols(income ~ union + male + age + age2 + age3 | 
                        year + marital_status + educ + n_children + religious, 
@@ -805,6 +803,7 @@ regression_function <- function(dt, countries) {
 
 ```{r}
 countries <- sort(unique(formatted_dt$country))
+formatted_dt <- formatted_dt[country != 'Bangladesh' & country != 'Dominican Republic']  # super insignificant
 results <- regression_function(formatted_dt, countries)
 male_results <- regression_function(formatted_dt[male == 1,], countries)
 female_results <- regression_function(formatted_dt[male == 0,], countries)
@@ -812,28 +811,33 @@ under_age_35_results <- regression_function(formatted_dt[age <= 35 ,], countries
 over_age_35_results <- regression_function(formatted_dt[age > 35 ,], countries)
 uneducated_results <- regression_function(formatted_dt[educ < 6 ,], countries)
 educated_results <- regression_function(formatted_dt[educ == 6 ,], countries)
-
+lower_income_results <- regression_function(formatted_dt[income < 6 ,], countries)
+higher_income_results <- regression_function(formatted_dt[income >= 6 ,], countries)
 ```
 
 ## Pretty Tables of the Results
 ```{r}
 pretty_results_table <- function(results, with_official_union=F) {
-  results <- results[order(country_name)]
+  results[, sig := ifelse(pr_t < 0.001, paste0(round(Estimate, 2), "***"), 
+                        ifelse(pr_t < 0.01, paste0(round(Estimate, 2), "**"), 
+                               ifelse(pr_t < 0.05, paste0(round(Estimate, 2), "*"), paste0(round(Estimate, 2)))))]
+  
+  results <- results[order(Estimate)]
   if (with_official_union) {
-    pretty_results <- results
-    colnames(pretty_results) <- c("Country", "Union Membership Estimate", "Std. Error", "t value", "Pr(>|t|)", 
-                                  "No. Observation", "Reggression No. Observation", 'Union Rate', 'Official Union Rate')  
+    pretty_results <- results[, .(country_name, sig, sd, country_n_obs, regresion_n_obs, union_rate_in_data, union_rate)]
+    colnames(pretty_results) <- c("Country", "Union Membership Estimate", "Std. Error", "No. Observation", 
+                                  "Reggression No. Observation", 'Union Rate', 'Official Union Rate')  
   } else {
-    pretty_results <- results[, .(country_name, Estimate, sd, t_value, pr_t, country_n_obs, regresion_n_obs, union_rate_in_data)]
-    colnames(pretty_results) <- c("Country", "Union Membership Estimate", "Std. Error", "t value", "Pr(>|t|)", 
-                                  "No. Observation", "Reggression No. Observation", 'Union Rate')  
+    pretty_results <- results[, .(country_name, sig, sd, country_n_obs, regresion_n_obs, union_rate_in_data)]
+    colnames(pretty_results) <- c("Country", "Union Membership Estimate", "Std. Error", "No. Observation", 
+                                  "Reggression No. Observation", 'Union Rate')  
   }
   
   results_table_to_show <- pretty_results %>%
     kbl() %>%
     kable_classic(full_width = F, html_font = "Cambria") %>%
     kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
-    column_spec(1, bold = T)
+    column_spec(1, bold = T) 
   results_table_to_show  
 }
 
@@ -844,28 +848,109 @@ pretty_results_table(under_age_35_results)
 pretty_results_table(over_age_35_results)
 pretty_results_table(uneducated_results)
 pretty_results_table(educated_results)
+pretty_results_table(lower_income_results)
+pretty_results_table(higher_income_results)
 
 ```
 
 
+
 ```{r plot, echo=FALSE}
-plot_results <- function(results, title) {
+plot_results <- function(results, title, width=1100, height=700) {
   plot <- plot_ly(results, x = ~country_name) %>% 
     add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
-    layout(xaxis = list(categoryorder = "total descending", tickvals = ~country_name, title=""), title=title)
+    layout(xaxis = list(categoryorder = "total descending", tickvals = ~country_name, title=""), title=title, 
+           width=width, height=height)
   plot
 }
 
 plot_results(results, "Union Premium per Country")
+
 plot_results(male_results, "Union Premium per Country - Male")
 plot_results(female_results, "Union Premium per Country - Female")
+
 plot_results(under_age_35_results, "Union Premium per Country - Age <= 35")
 plot_results(over_age_35_results, "Union Premium per Country - Age > 35")
 plot_results(uneducated_results, "Union Premium per Country - Without University Degree")
 plot_results(educated_results, "Union Premium per Country - With University Degree")
 
+european_country_names <- country_iso_codes[country_short_name %in% europe_contries, country_name]
+european_results <- results[country_name %in% european_country_names]
+
+plot <- plot_ly(european_results, x = ~country_name) %>% 
+  add_trace(y = ~Estimate, type = 'scatter', mode='markers', error_y = ~list(array = 1.96 * sd, color='lightblue')) %>% 
+  layout(xaxis = list(categoryorder = "total descending", tickvals = ~country_name, tickangle=90, title=""), 
+         title="Union Premium per Country - Europe")
+plot
+
+
+# significant 
+significant_counries_results <- results[grepl("*", sig, fixed = TRUE)]
+plot_results(significant_counries_results, "Union Premium per Country", width=900, height=500)
+
+
+```
+```{r graph only europe}
+results
+
 ```
 
+```{r}
+# results statistics
+results_statistics <- function(results) {
+  n <- nrow(results)
+  paste0("Mean: ", round(mean(results$Estimate), 3), 
+         " Variance: ", round(var(results$Estimate), 3),
+         " negatives: ", round(nrow(results[Estimate < 0]) / n, 3),
+         " insignificance: ", round(nrow(results[pr_t > 0.1]) / n, 3)
+         )
+}
+
+paste0("results: " , results_statistics(results))
+paste0("male results: " , results_statistics(male_results))
+paste0("female results: " , results_statistics(female_results))
+paste0("undergraduated results: " , results_statistics(uneducated_results))
+paste0("graduated results: " , results_statistics(educated_results))
+paste0("lower income results: " , results_statistics(lower_income_results))
+paste0("higher income results: " , results_statistics(higher_income_results))
+```
+ 
+```{r all subset results in one table}
+table_with_significance <- function(results, name) {
+  table <- results[, .(country_name, Estimate, pr_t)]
+  table[, new := ifelse(pr_t < 0.001, paste0(round(Estimate, 2), "***"), 
+                        ifelse(pr_t < 0.01, paste0(round(Estimate, 2), "**"), 
+                               ifelse(pr_t < 0.05, paste0(round(Estimate, 2), "*"), paste0(round(Estimate, 2)))))]
+  table <- table[, .(country_name, new)]
+  colnames(table) <- c("Country", name)
+  table
+}
+
+
+male_table <- table_with_significance(male_results, 'Male')
+female_table <- table_with_significance(female_results, 'Female')
+uneducated_table <- table_with_significance(uneducated_results, 'Without Degree')
+educated_table <- table_with_significance(educated_results, 'With Degree')
+low_table <- table_with_significance(lower_income_results, 'Lower Income')
+high_table <- table_with_significance(higher_income_results, 'Higher Income')
+young_table <- table_with_significance(under_age_35_results, "Age <= 35")
+older_table <- table_with_significance(over_age_35_results, "Age > 35")
+
+
+all_subset_results <- merge(merge(merge(merge(merge(merge(merge(male_table, female_table, by="Country", all=T), 
+                  uneducated_table, all=T), 
+            educated_table, all=T), 
+      low_table, all=T), high_table, all=T), young_table, all=T), older_table, all=T)
+
+results_table_to_show <- all_subset_results %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, font_size = 16) %>%
+  column_spec(1, bold = T)
+results_table_to_show 
+
+
+```
 
 ```{r AKM country}
 #akm_model <- feols(income ~ union + male + age + age2 + age3 + n_children + education  | year + employment_status 
@@ -881,5 +966,57 @@ plot_results(educated_results, "Union Premium per Country - With University Degr
 #             100 * round(weigted_var_country_fe / weigted_var_income, 3), "%"))
 # if we want, we can do the same to the other fixed effect, and answer the question: 
 # "How much of the income variance can be explained by ___?" where ___ can be also year, employment_status, marital_status
+```
+
+## Statistics
+```{r}
+dt_for_plot <- formatted_dt
+
+dt_for_plot$union <- as.character(dt_for_plot$union)
+dt_for_plot[is.na(union)]$union <- "Union Membership NA"
+dt_for_plot[union == 0]$union <- "Not Union Membership"
+dt_for_plot[union == 1]$union <- "Union Membership"
+
+
+# MARITAL STATUS
+dt_for_plot$marital_status <- as.character(dt_for_plot$marital_status)
+dt_for_plot[is.na(marital_status)]$marital_status <- "NA"
+dt_for_plot[marital_status == 1]$marital_status <- "Married"
+dt_for_plot[marital_status == 2]$marital_status <- "Living together as married"
+dt_for_plot[marital_status == 3]$marital_status <- "Divorced"
+dt_for_plot[marital_status == 4]$marital_status <- "Separated"
+dt_for_plot[marital_status == 5]$marital_status <- "Widowed"
+dt_for_plot[marital_status == 6]$marital_status <- "Single/Never married"
+plot_ly(dt_for_plot, x=~marital_status, type='histogram', color=~union) %>% 
+  layout(title="Marital Status", yaxis = list(titlefont = list(size = 16)), xaxis = list(titlefont = list(size = 16)), 
+         height=400, width=600, barmode = 'stack')
+
+
+dt_for_plot$educ <- as.character(dt_for_plot$educ)
+dt_for_plot[is.na(educ)]$educ <- "NA"
+dt_for_plot[educ == 1]$educ <- "Less than primary"
+dt_for_plot[educ == 2]$educ <- "Primary"
+dt_for_plot[educ == 3]$educ <- "Middle/High School"
+dt_for_plot[educ == 4]$educ <- "Post High School"
+dt_for_plot[educ == 5]$educ <- "Some university education (no degree)"
+dt_for_plot[educ == 6]$educ <- "University Degree"
+plot_ly(dt_for_plot, x=~educ, type='histogram', color=~union) %>% 
+  layout(title="Education Level", yaxis = list(titlefont = list(size = 16)), xaxis = list(titlefont = list(size = 16)), 
+         height=400, width=600, barmode = 'stack')
+
+dt_for_plot$n_children <- as.character(dt_for_plot$n_children)
+dt_for_plot[is.na(n_children)]$n_children <- "NA"
+plot_ly(dt_for_plot, x=~n_children, type='histogram', color=~union) %>% 
+  layout(title="Number of Children", yaxis = list(titlefont = list(size = 16)), xaxis = list(titlefont = list(size = 16)), 
+         height=400, width=600, barmode = 'stack')
+
+dt_for_plot$religious <- as.character(dt_for_plot$religious)
+dt_for_plot[is.na(religious)]$religious <- "NA"
+dt_for_plot[religious == 1]$religious <- "Religious"
+dt_for_plot[religious == 2]$religious <- "Not Religious"
+dt_for_plot[religious == 3]$religious <- "Atheist"
+plot_ly(dt_for_plot, x=~religious, type='histogram', color=~union) %>% 
+  layout(title="Religious", yaxis = list(titlefont = list(size = 16)), xaxis = list(titlefont = list(size = 16)), 
+         height=400, width=600, barmode = 'stack')
 ```
 

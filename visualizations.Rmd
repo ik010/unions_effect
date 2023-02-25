@@ -24,21 +24,41 @@ library(kableExtra)
 
 DATA_DIR <-  "/Users/noam/Personal/HUJI/Labor Economics/Final Project/data"
 
-COUNTRY_CODES_PATH <- file.path(DATA_DIR, 'cow_country_codes.csv')
+IVS_PATH <- file.path(DATA_DIR, 'Integrated_values_surveys_1981-2021.dta')
+OFFICIAL_UNION_DATA_PATH <- file.path(DATA_DIR, "data-jnKbb.csv")
+
+
+COUNTRY_COW_CODES_PATH <- file.path(DATA_DIR, 'cow_country_codes.csv')
+COUNTRY_ISO_CODES_PATH <- file.path(DATA_DIR, 'wikipedia-iso-country-codes.csv')
 IVS_PATH <- file.path(DATA_DIR, 'Integrated_values_surveys_1981-2021.dta')
 
 ```
 
 ```{r country codes}
-country_codes <- unique(data.table(read.csv(COUNTRY_CODES_PATH)))
-colnames(country_codes) <- c("country_short_name", "COW_NUM", "country_name")
-country_codes
+country_cow_codes <- unique(data.table(read.csv(COUNTRY_COW_CODES_PATH)))
+colnames(country_cow_codes) <- c("country_short_name", "COW_NUM", "country_name")
+
+country_iso_codes <- unique(data.table(read.csv(COUNTRY_ISO_CODES_PATH)))
+country_iso_codes <- country_iso_codes[, .(English.short.name.lower.case, Alpha.3.code)]
+colnames(country_iso_codes) <- c("country_name", "country_short_name")
+```
+
+```{r}
+unions_data  <- data.table(read.csv(OFFICIAL_UNION_DATA_PATH))
+colnames(unions_data) <- c("country_short_name", "country_update","source", "union_rate", "rate_note", "source_note")
+europe_contries <- c("AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU", "GRC", "HUN", "IRL", "ITA", "LVA", "LTU", "LUX", "MLT", "NLD", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "SWE")
 ```
 
 
 ```{r original data}
 original_dt <- data.table(read_dta(IVS_PATH))
 dt <- merge(original_dt, country_codes, by="COW_NUM")
+
+```
+```{r}
+merged_union_data <- merge(unions_data, country_iso_codes, by='country_short_name', all=T)
+merged_union_data <- merged_union_data[, .(country_name, union_rate)]
+merged_union_data
 ```
 
 ```{r}
@@ -122,3 +142,14 @@ plot_ly(data=per_country, x = ~country_name, y = ~mean_interview_length, type = 
          xaxis = list(title = 'Country', titlefont = list(size = 16), tickmode='linear'),
          height=400, width=1100)
 ```
+```{r percentage of union membership per country}
+
+union_membership <-
+  if (i %in% c(1, 3, 5:7)){
+      cur_wave[!is.na(cur_wave$A101),]
+    } else {
+        cur_wave[!is.na(cur_wave$A067),]
+    }
+
+```
+
